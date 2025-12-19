@@ -1,0 +1,17 @@
+services:
+  neo4j:
+    image: neo4j:community
+    ports:
+      - 7474
+      - 7687
+    environment:
+      NEO4J_AUTH: "neo4j/secret"
+      NEO4J_dbms_security_auth__minimum__password__length: 6
+      NEO4J_client_allow__telemetry: "false"
+      NEO4J_db_logs_query_enabled: "info"
+    healthcheck:
+      test: ["CMD-SHELL", "/var/lib/neo4j/bin/neo4j status"]
+      interval: 5m
+      retries: 2
+      start_interval: 5s
+      start_period: 1m

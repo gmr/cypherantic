@@ -1,0 +1,15 @@
+#!/usr/bin/env sh
+set -e
+
+rm -f .env
+uv sync --locked --all-extras --dev
+uv run pre-commit install --install-hooks
+if ! neo4j_addr=$(docker compose port neo4j 7687 2>/dev/null)
+then
+	docker compose up -d --wait
+	neo4j_addr=$(docker compose port neo4j 7687 2>/dev/null)
+fi
+
+cat>.env<<EOF
+NEO4J_URL=bolt://neo4j:secret@localhost:${neo4j_addr#*:}
+EOF

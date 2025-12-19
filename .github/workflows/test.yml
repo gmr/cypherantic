@@ -1,0 +1,55 @@
+name: Tests
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      neo4j:
+        image: neo4j:community
+        ports:
+          - 7687:7687
+          - 7474:7474
+        options: >-
+          --health-cmd="cypher-shell -u neo4j -p secret 'RETURN 1'"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+        env:
+          NEO4J_AUTH: "neo4j/secret"
+          NEO4J_dbms_security_auth__minimum__password__length: 6
+
+    strategy:
+      matrix:
+        python-version: ['3.12', '3.13', '3.14']
+
+    steps:
+    - uses: actions/checkout@v5
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v7
+      with:
+        enable-cache: true
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install the project
+      run: uv sync --locked --all-extras --dev
+
+    - name: Lint
+      run: uv run pre-commit run --all-files
+
+    - name: Typecheck
+      run: uv run mypy src tests example.py
+
+    - name: Test with pytest
+      env:
+        NEO4J_URI: bolt://neo4j:secret@localhost:${{ job.services.neo4j.ports['7687'] }}
+      run: |
+        uv run coverage run -m pytest tests
+        uv run coverage report
+        uv run coverage xml
