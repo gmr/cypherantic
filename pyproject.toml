@@ -17,7 +17,6 @@ classifiers = [
   "Typing :: Typed",
 ]
 dependencies = [
-  "logging>=0.4.9.6",
   "neo4j~=6.0",
   "pydantic~=2.12",
   "typing>=3.10.0.0",
