@@ -63,7 +63,7 @@ class MovieReview(cypherantic.RelationshipModel):
 
 async def main() -> None:
     dotenv.load_dotenv()
-    url = parse.urlsplit(os.environ['NEO4J_BOLT_URL'])
+    url = parse.urlsplit(os.environ['NEO4J_URL'])
     assert url.username and url.password
     async with neo4j.AsyncGraphDatabase().driver(
         f'{url.scheme}://{url.hostname}:{url.port or 7687}',
