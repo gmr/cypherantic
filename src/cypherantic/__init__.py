@@ -67,12 +67,65 @@ class Relationship:
     direction: typing.Literal['INCOMING', 'OUTGOING']
 
 
+def _convert_neo4j_types(data: object) -> object:
+    """Convert Neo4j-specific types to Python native types."""
+    if isinstance(data, dict):
+        return {
+            key: _convert_neo4j_types(value) for key, value in data.items()
+        }
+    if isinstance(data, list):
+        return [_convert_neo4j_types(item) for item in data]
+    if hasattr(data, 'to_native'):  # Neo4j DateTime, Date, Time objects
+        return data.to_native()
+    return data
+
+
+def _prepare_node_data(
+    model_cls: type[pydantic.BaseModel], node_data: dict[str, typing.Any]
+) -> dict[str, typing.Any]:
+    """Prepare node data for model validation by handling relationship fields.
+
+    Relationship fields are not stored as node properties in Neo4j, so we need
+    to provide default values for them to avoid validation errors.
+    """
+    prepared_data = node_data.copy()
+
+    # Check each field in the model
+    for field_name, field_info in model_cls.model_fields.items():
+        # Skip fields that already have data
+        if field_name in prepared_data:
+            continue
+
+        # Check if this is a relationship field
+        is_relationship = any(
+            isinstance(md, Relationship) for md in field_info.metadata
+        )
+
+        if is_relationship:
+            # Use the field's default if available, otherwise None
+            if field_info.default is not pydantic.fields.PydanticUndefined:
+                prepared_data[field_name] = field_info.default
+            elif (
+                field_info.default_factory
+                is not pydantic.fields.PydanticUndefined
+            ):
+                prepared_data[field_name] = field_info.default_factory()
+            else:
+                # No default, set to None
+                prepared_data[field_name] = None
+
+    return prepared_data
+
+
 def unwrap_node_as(
     model_cls: type[ModelType], node: neo4j.graph.Node | None
 ) -> ModelType:
     if node is None:
         raise InvalidValueError('No record to unwrap')
-    return model_cls.model_validate(node)
+    # Convert Neo4j types and prepare relationship fields
+    node_data = _convert_neo4j_types(dict(node))
+    prepared_data = _prepare_node_data(model_cls, node_data)
+    return model_cls.model_validate(prepared_data)
 
 
 async def unwrap_result_as_node(

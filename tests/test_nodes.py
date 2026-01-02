@@ -1,3 +1,4 @@
+import datetime
 import typing
 
 import pydantic
@@ -126,3 +127,69 @@ class CreateNodeTests(helpers.TestCase):
         created = await cypherantic.create_node(self.session, empty)
         node = await self.fetch_node_by_id(created.element_id)
         self.assertDictEqual({}, dict(node))
+
+    async def test_handles_datetime_fields(self) -> None:
+        class Event(pydantic.BaseModel):
+            name: str
+            occurred_at: datetime.datetime
+
+        event = Event(
+            name='Launch',
+            occurred_at=datetime.datetime(
+                2024, 1, 1, 12, 0, 0, tzinfo=datetime.UTC
+            ),
+        )
+        created = await cypherantic.create_node(self.session, event)
+
+        node = await self.fetch_node_by_id(created.element_id)
+        from_db = cypherantic.unwrap_node_as(Event, node)
+        self.assertEqual(from_db.name, 'Launch')
+        self.assertEqual(
+            from_db.occurred_at,
+            datetime.datetime(2024, 1, 1, 12, 0, 0, tzinfo=datetime.UTC),
+        )
+
+    async def test_handles_node_with_required_relationship_field(self) -> None:
+        class User(pydantic.BaseModel):
+            name: str
+
+        class Token(pydantic.BaseModel):
+            jti: str
+            user: typing.Annotated[
+                User | None,
+                cypherantic.Relationship(
+                    rel_type='ISSUED_TO', direction='OUTGOING'
+                ),
+            ] = None
+
+        token = Token(jti='token123', user=None)
+        created = await cypherantic.create_node(self.session, token)
+
+        node = await self.fetch_node_by_id(created.element_id)
+        from_db = cypherantic.unwrap_node_as(Token, node)
+        self.assertEqual(from_db.jti, 'token123')
+        self.assertIsNone(from_db.user)
+
+    async def test_handles_node_with_list_relationship_field(self) -> None:
+        class Post(pydantic.BaseModel):
+            title: str
+
+        class Comment(pydantic.BaseModel):
+            text: str
+
+        class PostWithComments(pydantic.BaseModel):
+            title: str
+            comments: typing.Annotated[
+                list[Comment],
+                cypherantic.Relationship(
+                    rel_type='HAS_COMMENT', direction='OUTGOING'
+                ),
+            ] = []
+
+        post = PostWithComments(title='Hello World', comments=[])
+        created = await cypherantic.create_node(self.session, post)
+
+        node = await self.fetch_node_by_id(created.element_id)
+        from_db = cypherantic.unwrap_node_as(PostWithComments, node)
+        self.assertEqual(from_db.title, 'Hello World')
+        self.assertEqual(from_db.comments, [])
