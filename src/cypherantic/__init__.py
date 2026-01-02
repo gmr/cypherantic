@@ -1,5 +1,4 @@
 import inspect
-import json
 import logging
 import typing
 from collections import abc
@@ -103,7 +102,9 @@ async def create_node(
         await _ensure_constraints(session, model_cls, node_labels)
 
     properties: dict[str, object] = {}
-    for field_name, field_value in model.model_dump(mode='python').items():
+    for field_name, field_value in model.model_dump(
+        mode='python', exclude_none=True
+    ).items():
         for md in model_cls.model_fields[field_name].metadata:
             if isinstance(md, Relationship):
                 break
@@ -350,7 +351,7 @@ async def _instrumented_run(
 ) -> neo4j.AsyncResult:
     logger = logging.getLogger('cypherantic')
     logger.debug('Executing query: %s', query)
-    logger.debug('With parameters: %s', json.dumps(parameters, indent=None))
+    logger.debug('With parameters: %r', parameters)
     return await session.run(query, **parameters)  # type: ignore[arg-type]
 
 
