@@ -193,3 +193,15 @@ class CreateNodeTests(helpers.TestCase):
         from_db = cypherantic.unwrap_node_as(PostWithComments, node)
         self.assertEqual(from_db.title, 'Hello World')
         self.assertEqual(from_db.comments, [])
+
+    async def test_handles_model_with_nullable_fields(self) -> None:
+        class User(pydantic.BaseModel):
+            name: str
+            display_name: str | None
+
+        user = User(name='Alice', display_name=None)
+        created = await cypherantic.create_node(self.session, user)
+        node = await self.fetch_node_by_id(created.element_id)
+        from_db = cypherantic.unwrap_node_as(User, node)
+        self.assertEqual(from_db.name, 'Alice')
+        self.assertIsNone(from_db.display_name)

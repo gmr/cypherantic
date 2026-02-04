@@ -6,6 +6,7 @@ from collections import abc
 import neo4j.graph
 import pydantic.dataclasses
 import pydantic.fields
+import pydantic_core
 
 _known_constraints: set[type[pydantic.BaseModel]] = set()
 
@@ -67,16 +68,34 @@ class Relationship:
     direction: typing.Literal['INCOMING', 'OUTGOING']
 
 
-def _convert_neo4j_types(data: object) -> object:
+@typing.overload
+def _convert_neo4j_types(
+    data: abc.Mapping[str, object],
+) -> dict[str, object]: ...
+
+
+@typing.overload
+def _convert_neo4j_types(
+    data: abc.Sequence[object],
+) -> list[object]: ...
+
+
+@typing.overload
+def _convert_neo4j_types(data: object) -> object: ...
+
+
+def _convert_neo4j_types(
+    data: abc.Mapping[str, object] | abc.Sequence[object] | object,
+) -> dict[str, object] | list[object] | object:
     """Convert Neo4j-specific types to Python native types."""
-    if isinstance(data, dict):
+    if isinstance(data, abc.Mapping):
         return {
             key: _convert_neo4j_types(value) for key, value in data.items()
         }
-    if isinstance(data, list):
+    if isinstance(data, abc.Sequence) and not isinstance(data, str):
         return [_convert_neo4j_types(item) for item in data]
     if hasattr(data, 'to_native'):  # Neo4j DateTime, Date, Time objects
-        return data.to_native()
+        return typing.cast('object', data.to_native())
     return data
 
 
@@ -103,16 +122,18 @@ def _prepare_node_data(
 
         if is_relationship:
             # Use the field's default if available, otherwise None
-            if field_info.default is not pydantic.fields.PydanticUndefined:
-                prepared_data[field_name] = field_info.default
-            elif (
-                field_info.default_factory
-                is not pydantic.fields.PydanticUndefined
-            ):
-                prepared_data[field_name] = field_info.default_factory()
-            else:
-                # No default, set to None
-                prepared_data[field_name] = None
+            prepared_data[field_name] = field_info.get_default(
+                call_default_factory=True, validated_data=prepared_data
+            )
+        elif (
+            field_info.is_required()
+            and field_info.default is pydantic_core.PydanticUndefined
+            and not field_info.default_factory
+        ):
+            # It is challenging to tell whether the field can be None
+            # based on the available information, try inserting None here.
+            # If our assumption is wrong, then model validation will fail.
+            prepared_data[field_name] = None
 
     return prepared_data
 
